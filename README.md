@@ -1,0 +1,2 @@
+Morphological operators for GIMP
+================================
