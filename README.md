@@ -1,11 +1,8 @@
 Morphological operators for GIMP
 ================================
-Created by Alessandro Francesconi
-
+A set of morphological operators for GIMP, created by Alessandro Francesconi. 
 Homepage with some examples: http://www.alessandrofrancesconi.it/projects/gimp-plugin-morphop
 
-A set of morphological operators for GIMP
------------------------------------------
 
 This plugin extends the GIMP's default filters "Erode" and "Dilate" with more features:
 

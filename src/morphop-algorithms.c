@@ -8,14 +8,17 @@
 #include "morphop-gui.h"
 
 #define min(a,b) a < b ? a : b
+#define USE_2_7_API (!(defined _WIN32 || (!defined _WIN32 && (GIMP_MAJOR_VERSION == 2) && (GIMP_MINOR_VERSION <= 6))))
 
-#if !(defined _WIN32 || (!defined _WIN32 && (GIMP_MAJOR_VERSION == 2) && (GIMP_MINOR_VERSION <= 6)))
-	// in the new 2.8 API, the function 'gimp_drawable_get_image' has been replaced by 'gimp_item_get_image'
+#if USE_2_7_API
+	// in the new 2.7 API, the function 'gimp_drawable_get_image' has been replaced by 'gimp_item_get_image'
 	#define gimp_drawable_get_image gimp_item_get_image
 #endif
 
 static void do_morph_operation(MorphOperator, GimpPixelRgn*, GimpPixelRgn*, guchar*, guchar*, StructuringElement, SourceTansformation);
 static void do_merge_operation(MergeOperation, GimpPixelRgn*, GimpPixelRgn*, GimpPixelRgn*, guchar*, guchar*, guchar*);
+static gboolean is_black(GimpPixelRgn*, guchar*);
+static void fill_black(GimpPixelRgn*, GimpPixelRgn*, guchar*, guchar*); 
 static void prepare_image_buffers(GimpDrawable*, GimpPixelRgn*, GimpPixelRgn*, guchar**, guchar**, int, int, int, int, gboolean);
 
 
@@ -136,11 +139,18 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		
 		// save the difference
 		do_merge_operation(MERGE_DIFF, &dst_rgn, &dst_rgn_d, &dst_rgn, dst_preview, dst_preview_d, dst_preview);
+		
+		if (is_preview) {
+			g_free(src_preview_d);
+			g_free(dst_preview_d);
+		}
+		else {
+			gimp_drawable_detach (drawable_d);
+		}
 	}
 	else if (settings.operator == OPERATOR_BOUNDEXTR) {
 		
 		// boundary extraction is the difference between the original image and its erosion
-		// will use the 'DIFF_INVERSE' flag, that subtract the eroded value from the original pixel
 		do_morph_operation(OPERATOR_EROSION, &src_rgn, &dst_rgn, src_preview, dst_preview, settings.element, SRC_ORIGINAL);
 		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
 		
@@ -188,6 +198,13 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		// do interception (take only the common values)
 		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview);
 		
+		if (is_preview) {
+			g_free(src_preview_c);
+			g_free(dst_preview_c);
+		}
+		else {
+			gimp_drawable_detach (drawable_c);
+		}
 	}
 	else if (settings.operator == OPERATOR_THICKENING) {
 
@@ -223,6 +240,14 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		
 		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview);
 		do_merge_operation(MERGE_UNION, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
+		
+		if (is_preview) {
+			g_free(src_preview_c);
+			g_free(dst_preview_c);
+		}
+		else {
+			gimp_drawable_detach (drawable_c);
+		}
 	
 	}
 	else if (settings.operator == OPERATOR_THINNING) {
@@ -259,6 +284,103 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		
 		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview);
 		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
+		
+		if (is_preview) {
+			g_free(src_preview_c);
+			g_free(dst_preview_c);
+		}
+		else {
+			gimp_drawable_detach (drawable_c);
+		}
+	
+	}
+	else if (settings.operator == OPERATOR_SKELETON) {
+		
+		// skeletonization follows this algorithm:
+		/*	
+			skeleton = black_image();
+			do
+			{
+				eroded = erode(img);
+				opened = dilate(eroded);
+				diff = img - opened;
+				skeleton = skeleton U diff;
+				img = eroded;
+			} while (is_black(img) == FALSE);
+		*/
+		
+		// we need some temporary buffers...
+		
+		// for erosions
+		int drawable_erod_id;
+		GimpDrawable* drawable_erod;
+		GimpPixelRgn src_rgn_erod, dst_rgn_erod;
+		guchar* src_preview_erod = NULL, *dst_preview_erod = NULL;
+		
+		drawable_erod_id = gimp_layer_new_from_drawable(drawable->drawable_id, gimp_drawable_get_image(drawable->drawable_id));
+		drawable_erod = gimp_drawable_get(drawable_erod_id);
+		prepare_image_buffers(drawable_erod, &src_rgn_erod, &dst_rgn_erod, &src_preview_erod, &dst_preview_erod, sel_x, sel_y, sel_w, sel_h, is_preview);
+		if (!preview) {
+			#if USE_2_7_API
+				// in the new 2.7 API, the function 'gimp_image_add_layer' has been replaced by 'gimp_image_insert_layer'
+				gimp_image_insert_layer (gimp_drawable_get_image (drawable_erod->drawable_id), drawable_erod_id, 0, 0);
+			#else
+				gimp_image_add_layer (gimp_drawable_get_image (drawable_erod->drawable_id), drawable_erod_id, 0);
+			#endif
+		}
+	
+		// for opening and difference
+		int drawable_open_id;
+		GimpDrawable* drawable_open;
+		GimpPixelRgn src_rgn_open, dst_rgn_open;
+		guchar* src_preview_open = NULL, *dst_preview_open = NULL;
+		
+		drawable_open_id = gimp_layer_new_from_drawable(drawable->drawable_id, gimp_drawable_get_image(drawable->drawable_id));
+		drawable_open = gimp_drawable_get(drawable_open_id);
+		prepare_image_buffers(drawable_open, &src_rgn_open, &dst_rgn_open, &src_preview_open, &dst_preview_open, sel_x, sel_y, sel_w, sel_h, is_preview);
+		
+		// the source/destination region will be the final skeleton. 
+		// start filling it black...
+		fill_black(&src_rgn, &dst_rgn, src_preview, dst_preview);
+		
+		do {
+			// eroded = erosion(img)
+			do_morph_operation(OPERATOR_EROSION, &src_rgn_erod, &dst_rgn_erod, src_preview_erod, dst_preview_erod, settings.element, SRC_ORIGINAL);
+			// open = dilate(eroded)
+			do_morph_operation(OPERATOR_DILATION, &dst_rgn_erod, &dst_rgn_open, dst_preview_erod, dst_preview_open, settings.element, SRC_ORIGINAL);
+			
+			// diff = img - open
+			do_merge_operation(MERGE_DIFF, &src_rgn_erod, &dst_rgn_open, &dst_rgn_open, src_preview_erod, dst_preview_open, dst_preview_open);
+			
+			// skel = skel U diff
+			do_merge_operation(MERGE_UNION, &dst_rgn, &dst_rgn_open, &dst_rgn, dst_preview, dst_preview_open, dst_preview);
+			
+			// must update the eroded drawable for the next iteration
+			if (!is_preview) {
+				gimp_drawable_flush (drawable_erod);
+				gimp_drawable_merge_shadow (drawable_erod->drawable_id, FALSE);
+				gimp_drawable_update (drawable_erod_id, dst_rgn.x, dst_rgn.y, dst_rgn.w, dst_rgn.h);
+				prepare_image_buffers(drawable_erod, &src_rgn_erod, &dst_rgn_erod, &src_preview_erod, &dst_preview_erod, sel_x, sel_y, sel_w, sel_h, is_preview);
+			}
+			else {
+				memcpy(src_preview_erod, dst_preview_erod, sel_w * sel_h * drawable->bpp);
+			}
+		}
+		while (!is_black(&src_rgn_erod, src_preview_erod)); // algorithm ends when the eroded image becomes totally black
+		
+		// here: dst_rgn/dst_preview is the final skeleton
+		
+		if (is_preview) {
+			g_free(src_preview_erod);
+			g_free(dst_preview_erod);
+			g_free(src_preview_open);
+			g_free(dst_preview_open);
+		}
+		else {
+			gimp_image_remove_layer (gimp_drawable_get_image (drawable_erod->drawable_id), drawable_erod_id);
+			gimp_drawable_detach (drawable_erod);
+			gimp_drawable_detach (drawable_open);
+		}
 	
 	}
 	else if (settings.operator == OPERATOR_WTOPHAT) {
@@ -280,6 +402,14 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		// and subtract it to the original image
 		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
 		
+		if (is_preview) {
+			g_free(src_preview_o);
+			g_free(dst_preview_o);
+		}
+		else {
+			gimp_drawable_detach (drawable_o);
+		}
+		
 	}
 	else if (settings.operator == OPERATOR_BTOPHAT) {
 		
@@ -297,6 +427,14 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		do_morph_operation(OPERATOR_EROSION, &dst_rgn_c, &dst_rgn, dst_preview_c, dst_preview, settings.element, SRC_ORIGINAL);
 		
 		do_merge_operation(MERGE_DIFF, &dst_rgn, &src_rgn, &dst_rgn, dst_preview, src_preview, dst_preview);
+		
+		if (is_preview) {
+			g_free(src_preview_c);
+			g_free(dst_preview_c);
+		}
+		else {
+			gimp_drawable_detach (drawable_c);
+		}
 		
 	}
 	
@@ -317,7 +455,8 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		// also finalize the progress bar and close the undo group
 		gimp_progress_update(1.0);
 		gimp_image_undo_group_end (gimp_drawable_get_image(drawable->drawable_id));
-	}	
+		gimp_drawable_detach (drawable);
+	}
 }
 
 static void do_morph_operation(
@@ -441,12 +580,24 @@ static void do_morph_operation(
 								best_pixel[i] = this_pixel[i];
 							}
 							best_lum = this_lum;
+							
+							// check if the very best value have been reached before the end
+							// this should gain some speed...
+							if (
+								(op == OPERATOR_EROSION && best_lum == 0) ||
+								(op == OPERATOR_DILATION && best_lum == 255)
+							) {
+								goto end_mask;
+							} 
+							
 						}
 					}
 				}
 			}
 			
-			// finished checking each pixel in the mask, now set the center to the best value found
+end_mask:
+			
+			// finished checking pixels in the mask, now set the center to the best value found
 			if (best_lum == -1) {
 				// error case: a valid pixel was not found. For example, scaling a small structuring element 
 				// to small dimensions could produce a totally black matrix. Solution: pixels don't change.
@@ -493,8 +644,6 @@ static void do_merge_operation(MergeOperation op, GimpPixelRgn* a, GimpPixelRgn*
 	guchar row_buffer_a[a->w * a->bpp];
 	guchar row_buffer_b[b->w * b->bpp];
 	
-	guchar inter_pixel[a->bpp];
-	
 	unsigned int x, y, i;
 	int ignore_alpha = gimp_drawable_has_alpha(a->drawable->drawable_id) ? 1 : 0;
 	
@@ -534,6 +683,7 @@ static void do_merge_operation(MergeOperation op, GimpPixelRgn* a, GimpPixelRgn*
 					row_buffer_a[x * a->bpp + i] = min(row_buffer_a[x * a->bpp + i] + row_buffer_b[x * a->bpp + i], 255);
 				}
 				else if (op == MERGE_INTERSEPT) {
+					// guchar inter_pixel[a->bpp]; ??
 					if (row_buffer_a[x * a->bpp + i] != row_buffer_b[x * b->bpp + i]) {
 						row_buffer_a[x * a->bpp + i] = 0;
 					}
@@ -546,6 +696,82 @@ static void do_merge_operation(MergeOperation op, GimpPixelRgn* a, GimpPixelRgn*
 		}
 		else {
 			gimp_pixel_rgn_set_row (dst, row_buffer_a, a->x, y, a->w);
+		}
+	}
+}
+
+static gboolean is_black(GimpPixelRgn* rgn, guchar* prev) 
+{
+	gboolean is_preview = (prev != NULL);
+	guchar row_buffer[rgn->w * rgn->bpp];
+	
+	unsigned int x, y, i, tot_color;
+	int ignore_alpha = gimp_drawable_has_alpha(rgn->drawable->drawable_id) ? 1 : 0;
+	
+	for (y = rgn->y; y < rgn->y + rgn->h; y ++) {
+		
+		if (!is_preview && y % 50 == 0) gimp_progress_update ((double)y / (rgn->y + rgn->h)); 
+		
+		if (is_preview) {
+			memcpy(&row_buffer, &prev[(y - rgn->y) * rgn->w * rgn->bpp], rgn->w * rgn->bpp);
+		}
+		else {
+			gimp_pixel_rgn_get_row (
+				rgn, 
+				row_buffer, 
+				rgn->x, 
+				y, 
+				rgn->w
+			);
+		}
+		
+		for (x = 0; x < rgn->w; x++) {
+			tot_color = 0;
+			for(i = 0; i < rgn->bpp - ignore_alpha; i++) {
+				tot_color += row_buffer[x * rgn->bpp + i];
+			}
+			if (tot_color != 0) return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+static void fill_black(GimpPixelRgn* src, GimpPixelRgn* dst, guchar* src_prev, guchar* dst_prev) 
+{
+	gboolean is_preview = (src_prev != NULL || dst_prev != NULL);
+	guchar row_buffer[src->w * src->bpp];
+	
+	unsigned int x, y, i;
+	int ignore_alpha = gimp_drawable_has_alpha(src->drawable->drawable_id) ? 1 : 0;
+	
+	for (y = src->y; y < src->y + src->h; y ++) {
+		
+		if (!is_preview && y % 50 == 0) gimp_progress_update ((double)y / (src->y + src->h)); 
+		
+		if (is_preview) {
+			memcpy(&row_buffer, &src_prev[(y - src->y) * src->w * src->bpp], src->w * src->bpp);
+		}
+		else {
+			gimp_pixel_rgn_get_row (
+				src, 
+				row_buffer, 
+				src->x, 
+				y, 
+				src->w
+			);
+		}
+		
+		for (x = 0; x < src->w; x++) {
+			for(i = 0; i < src->bpp - ignore_alpha; i++) {
+				row_buffer[x * src->bpp + i] = 0;
+			}
+		}
+		
+		if (is_preview) {
+			memcpy(&dst_prev[(y - src->y) * src->w * src->bpp], row_buffer, src->w * src->bpp);
+		}
+		else {
+			gimp_pixel_rgn_set_row (dst, row_buffer, src->x, y, src->w);
 		}
 	}
 }
@@ -566,8 +792,7 @@ static void prepare_image_buffers(
 	guchar** src_preview, guchar** dst_preview,
 	int sel_x, int sel_y, int sel_w, int sel_h,
 	gboolean is_preview
-) 
-{
+){
 	gimp_pixel_rgn_init (
 		src_rgn, 
 		drawable,

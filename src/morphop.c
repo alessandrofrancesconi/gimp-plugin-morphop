@@ -180,5 +180,4 @@ static void run (
 	}
 
 	values[0].data.d_status = status;
-	gimp_drawable_detach (drawable);
 }
