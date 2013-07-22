@@ -16,7 +16,7 @@
 #endif
 
 static void do_morph_operation(MorphOperator, GimpPixelRgn*, GimpPixelRgn*, guchar*, guchar*, StructuringElement, SourceTansformation);
-static void do_merge_operation(MergeOperation, GimpPixelRgn*, GimpPixelRgn*, GimpPixelRgn*, guchar*, guchar*, guchar*);
+static void do_merge_operation(MergeOperation, GimpPixelRgn*, GimpPixelRgn*, GimpPixelRgn*, guchar*, guchar*, guchar*, SourceTansformation);
 static gboolean is_black(GimpPixelRgn*, guchar*);
 static void fill_black(GimpPixelRgn*, GimpPixelRgn*, guchar*, guchar*); 
 static void prepare_image_buffers(GimpDrawable*, GimpPixelRgn*, GimpPixelRgn*, guchar**, guchar**, int, int, int, int, gboolean);
@@ -138,7 +138,7 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		do_morph_operation(OPERATOR_DILATION, &src_rgn_d, &dst_rgn_d, src_preview_d, dst_preview_d, settings.element, SRC_ORIGINAL);
 		
 		// save the difference
-		do_merge_operation(MERGE_DIFF, &dst_rgn, &dst_rgn_d, &dst_rgn, dst_preview, dst_preview_d, dst_preview);
+		do_merge_operation(MERGE_DIFF, &dst_rgn, &dst_rgn_d, &dst_rgn, dst_preview, dst_preview_d, dst_preview, SRC_ORIGINAL);
 		
 		if (is_preview) {
 			g_free(src_preview_d);
@@ -152,7 +152,7 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		
 		// boundary extraction is the difference between the original image and its erosion
 		do_morph_operation(OPERATOR_EROSION, &src_rgn, &dst_rgn, src_preview, dst_preview, settings.element, SRC_ORIGINAL);
-		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
+		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview, SRC_ORIGINAL);
 		
 	}
 	else if (settings.operator == OPERATOR_HITORMISS) {
@@ -196,7 +196,7 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		do_morph_operation(OPERATOR_EROSION, &src_rgn, &dst_rgn_c, src_preview_c, dst_preview_c, B2, SRC_INVERSE);
 		
 		// do interception (take only the common values)
-		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview);
+		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview, SRC_ORIGINAL);
 		
 		if (is_preview) {
 			g_free(src_preview_c);
@@ -238,8 +238,8 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		do_morph_operation(OPERATOR_EROSION, &src_rgn, &dst_rgn, src_preview, dst_preview, B1, SRC_ORIGINAL);
 		do_morph_operation(OPERATOR_EROSION, &src_rgn, &dst_rgn_c, src_preview_c, dst_preview_c, B2, SRC_INVERSE);
 		
-		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview);
-		do_merge_operation(MERGE_UNION, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
+		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview, SRC_ORIGINAL);
+		do_merge_operation(MERGE_UNION, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview, SRC_ORIGINAL);
 		
 		if (is_preview) {
 			g_free(src_preview_c);
@@ -282,8 +282,8 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		do_morph_operation(OPERATOR_EROSION, &src_rgn, &dst_rgn, src_preview, dst_preview, B1, SRC_ORIGINAL);
 		do_morph_operation(OPERATOR_EROSION, &src_rgn, &dst_rgn_c, src_preview_c, dst_preview_c, B2, SRC_INVERSE);
 		
-		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview);
-		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
+		do_merge_operation(MERGE_INTERSEPT, &dst_rgn, &dst_rgn_c, &dst_rgn, dst_preview, dst_preview_c, dst_preview, SRC_ORIGINAL);
+		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview, SRC_ORIGINAL);
 		
 		if (is_preview) {
 			g_free(src_preview_c);
@@ -310,8 +310,7 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		*/
 		
 		// we need some temporary buffers...
-		
-		// for erosions
+		// ...for erosions
 		int drawable_erod_id;
 		GimpDrawable* drawable_erod;
 		GimpPixelRgn src_rgn_erod, dst_rgn_erod;
@@ -329,7 +328,7 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 			#endif
 		}
 	
-		// for opening and difference
+		// ...for opening and difference
 		int drawable_open_id;
 		GimpDrawable* drawable_open;
 		GimpPixelRgn src_rgn_open, dst_rgn_open;
@@ -339,21 +338,21 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		drawable_open = gimp_drawable_get(drawable_open_id);
 		prepare_image_buffers(drawable_open, &src_rgn_open, &dst_rgn_open, &src_preview_open, &dst_preview_open, sel_x, sel_y, sel_w, sel_h, is_preview);
 		
-		// the source/destination region will be the final skeleton. 
+		// the destination region will be the final skeleton. 
 		// start filling it black...
 		fill_black(&src_rgn, &dst_rgn, src_preview, dst_preview);
 		
 		do {
-			// eroded = erosion(img)
-			do_morph_operation(OPERATOR_EROSION, &src_rgn_erod, &dst_rgn_erod, src_preview_erod, dst_preview_erod, settings.element, SRC_ORIGINAL);
+			// eroded = erosion(img) [must threshold 'img'!]
+			do_morph_operation(OPERATOR_EROSION, &src_rgn_erod, &dst_rgn_erod, src_preview_erod, dst_preview_erod, settings.element, SRC_THRESHOLD);
 			// open = dilate(eroded)
 			do_morph_operation(OPERATOR_DILATION, &dst_rgn_erod, &dst_rgn_open, dst_preview_erod, dst_preview_open, settings.element, SRC_ORIGINAL);
 			
-			// diff = img - open
-			do_merge_operation(MERGE_DIFF, &src_rgn_erod, &dst_rgn_open, &dst_rgn_open, src_preview_erod, dst_preview_open, dst_preview_open);
+			// diff = img - open [must threshold 'img'!]
+			do_merge_operation(MERGE_DIFF, &src_rgn_erod, &dst_rgn_open, &dst_rgn_open, src_preview_erod, dst_preview_open, dst_preview_open, SRC_THRESHOLD);
 			
 			// skel = skel U diff
-			do_merge_operation(MERGE_UNION, &dst_rgn, &dst_rgn_open, &dst_rgn, dst_preview, dst_preview_open, dst_preview);
+			do_merge_operation(MERGE_UNION, &dst_rgn, &dst_rgn_open, &dst_rgn, dst_preview, dst_preview_open, dst_preview, SRC_ORIGINAL);
 			
 			// must update the eroded drawable for the next iteration
 			if (!is_preview) {
@@ -400,7 +399,7 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		do_morph_operation(OPERATOR_DILATION, &dst_rgn_o, &dst_rgn, dst_preview_o, dst_preview, settings.element, SRC_ORIGINAL);
 		
 		// and subtract it to the original image
-		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview);
+		do_merge_operation(MERGE_DIFF, &src_rgn, &dst_rgn, &dst_rgn, src_preview, dst_preview, dst_preview, SRC_ORIGINAL);
 		
 		if (is_preview) {
 			g_free(src_preview_o);
@@ -426,7 +425,7 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 		do_morph_operation(OPERATOR_DILATION, &src_rgn, &dst_rgn_c, src_preview, dst_preview_c, settings.element, SRC_ORIGINAL);
 		do_morph_operation(OPERATOR_EROSION, &dst_rgn_c, &dst_rgn, dst_preview_c, dst_preview, settings.element, SRC_ORIGINAL);
 		
-		do_merge_operation(MERGE_DIFF, &dst_rgn, &src_rgn, &dst_rgn, dst_preview, src_preview, dst_preview);
+		do_merge_operation(MERGE_DIFF, &dst_rgn, &src_rgn, &dst_rgn, dst_preview, src_preview, dst_preview, SRC_ORIGINAL);
 		
 		if (is_preview) {
 			g_free(src_preview_c);
@@ -459,6 +458,21 @@ void start_operation(GimpDrawable *drawable, GimpPreview *preview, MorphOpSettin
 	}
 }
 
+/* do_morph_operation()
+ * 
+ * Executes erosion or dilation using the given structuring element
+ * 
+ *	- MorphOperator op: the operator, it can be OPERATOR_EROSION or OPERATOR_DILATION
+ *  - GimpPixelRgn* src: source region
+ *  - GimpPixelRgn* dst: destination region
+ *  - guchar* src_prev: source preview buffer (if any)
+ *  - guchar* dst_prev: destination preview buffer
+ *  - StructuringElement element: the structuring element
+ *  - SourceTansformation srctransf: a "source preprocessing" option, it can be:
+ *		- SRC_ORIGINAL (leaves source unchanged)
+ *		- SRC_INVERSE (invert source's colors, used by Hit-or-Miss)
+ *		- SRC_THRESHOLD (makes a threshold, if color < 127 => 0, else => 1, used by Skeletonization)
+ */
 static void do_morph_operation(
 	MorphOperator op, 
 	GimpPixelRgn *src, GimpPixelRgn *dst, 
@@ -490,6 +504,7 @@ static void do_morph_operation(
 	guchar row_buffer_mask[final_elem_size][src->w * src->bpp]; // will store the input pixel in a "big" row (for masking)
 	
 	guchar this_pixel[src->bpp]; // the visited pixel
+	guchar this_lum; // the luminosity of the visited pixel
 	guchar best_pixel[src->bpp]; // the best pixel found to be copied on the center pixel
 	unsigned int best_lum; // the luminosity of the best pixel
 	
@@ -556,17 +571,24 @@ static void do_morph_operation(
 					){
 						// get this pixel's values
 						for(i = 0; i < src->bpp; i++) {
-							if (srctransf == SRC_ORIGINAL) this_pixel[i] = row_buffer_mask[neigh_y][neigh_x + i];
+							if (srctransf == SRC_ORIGINAL || srctransf == SRC_THRESHOLD) this_pixel[i] = row_buffer_mask[neigh_y][neigh_x + i];
 							else if (srctransf == SRC_INVERSE) this_pixel[i] = abs(row_buffer_mask[neigh_y][neigh_x + i] - 255);
 						}
 						
 						// and calc its luminosity (different ways for different image types)
-						unsigned int this_lum;
 						if (image_type == GIMP_RGB_IMAGE || image_type == GIMP_RGBA_IMAGE) {
 							this_lum = this_pixel[0] * 0.2126 + this_pixel[1] * 0.7152 + this_pixel[2] * 0.0722;
+							if (srctransf == SRC_THRESHOLD) {
+								this_lum = (this_lum < 127 ? 0 : 255);
+								this_pixel[0] = this_pixel[1] = this_pixel[2] = this_lum;
+							}
 						}
 						else {
 							this_lum = this_pixel[0];
+							if (srctransf == SRC_THRESHOLD) {
+								this_lum = (this_lum < 127 ? 0 : 255);
+								this_pixel[0] = this_lum;
+							}
 						}
 						
 						// now check if this luminosity is better than the best found so far
@@ -630,19 +652,27 @@ end_mask:
  * - an "union" (min(Ai - Bi, 255)),
  * - an "interseption", taking only the common pixels and setting the others to black.
  * 
- *	- MergeOperation op: the merge operation, can be MERGE_DIFF, MERGE_UNION or MERGE_INTERSEPT
+ *	- MergeOperation op: the merge operation, it can be MERGE_DIFF, MERGE_UNION or MERGE_INTERSEPT
  *  - GimpPixelRgn* a: first input region
  *  - GimpPixelRgn* b: second input region
  *  - GimpPixelRgn* dst: destination region
  *  - guchar* a_prev: first input preview buffer (if any)
  *  - guchar* b_prev: second input preview buffer
  *  - guchar* dst_prev: destination preview buffer
+ *  - SourceTansformation srctransf: a "source preprocessing" option applied to a/a_prev, see do_morph_operation()
  */
-static void do_merge_operation(MergeOperation op, GimpPixelRgn* a, GimpPixelRgn* b, GimpPixelRgn* dst, guchar* a_prev, guchar* b_prev, guchar* dst_prev) 
-{
+static void do_merge_operation(
+	MergeOperation op, 
+	GimpPixelRgn* a, GimpPixelRgn* b, GimpPixelRgn* dst, 
+	guchar* a_prev, guchar* b_prev, 
+	guchar* dst_prev,
+	SourceTansformation srctransf
+){
 	gboolean is_preview = (a_prev != NULL || b_prev != NULL);
 	guchar row_buffer_a[a->w * a->bpp];
 	guchar row_buffer_b[b->w * b->bpp];
+	
+	GimpImageType image_type = gimp_drawable_type (a->drawable->drawable_id);
 	
 	unsigned int x, y, i;
 	int ignore_alpha = gimp_drawable_has_alpha(a->drawable->drawable_id) ? 1 : 0;
@@ -674,6 +704,21 @@ static void do_merge_operation(MergeOperation op, GimpPixelRgn* a, GimpPixelRgn*
 		}
 		
 		for (x = 0; x < a->w; x++) {
+		
+			// preoprocessing on a/a_prev
+			if (srctransf == SRC_THRESHOLD) {
+				for(i = 0; i < a->bpp - ignore_alpha; i++) {
+					if (image_type == GIMP_RGB_IMAGE || image_type == GIMP_RGBA_IMAGE) {
+						unsigned char this_lum = row_buffer_a[x * a->bpp + 0] * 0.2126 + row_buffer_a[x * a->bpp + 1] * 0.7152 + row_buffer_a[x * a->bpp + 2] * 0.0722;
+						row_buffer_a[x * a->bpp + 0] = row_buffer_a[x * a->bpp + 1] = row_buffer_a[x * a->bpp + 2] = (this_lum < 127 ? 0 : 255);
+						break;
+					}
+					else {
+						row_buffer_a[x * a->bpp + i] = row_buffer_a[x * a->bpp + i] < 127 ? 0 : 255;
+					}
+				}
+			}
+		
 			// merge here, skipping alpha channel if present
 			for(i = 0; i < a->bpp - ignore_alpha; i++) {
 				if (op == MERGE_DIFF) {

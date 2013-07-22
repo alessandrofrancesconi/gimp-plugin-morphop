@@ -26,6 +26,7 @@ typedef enum {
 typedef enum {
 	SRC_ORIGINAL = 0,
 	SRC_INVERSE,
+	SRC_THRESHOLD,
 	
 	SRC_END
 } SourceTansformation;
