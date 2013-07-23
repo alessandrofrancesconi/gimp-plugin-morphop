@@ -340,7 +340,7 @@ const char* operator_get_string(MorphOperator o)
 		case OPERATOR_BOUNDEXTR: return "Boundary extraction"; break;
 		case OPERATOR_GRADIENT: return "Gradient"; break;
 		case OPERATOR_HITORMISS: return "Hit-or-Miss"; break;
-		case OPERATOR_SKELETON: return "Skeletonization (it's slow!)"; break;
+		case OPERATOR_SKELETON: return "Skeletonization"; break;
 		case OPERATOR_THICKENING: return "Thickening"; break;
 		case OPERATOR_THINNING: return "Thinning"; break;
 		case OPERATOR_WTOPHAT: return "White Top-hat"; break;
@@ -358,7 +358,7 @@ const char* operator_get_info(MorphOperator o)
 		case OPERATOR_CLOSING: return "Closing is a \"less destructive\" dilation. It shrinks darker regions but preserving those that have a similar shape to the structuring element."; break;
 		case OPERATOR_BOUNDEXTR: return "It produces a dark image where bright areas represents the boundaries of the original objects in the input."; break;
 		case OPERATOR_GRADIENT: return "Useful for edge detection, it results in an usually dark image where pixels indicate the contrast intensity in its close neghborhood."; break;
-		case OPERATOR_SKELETON: return "Creates a topological skeletonization of the input.\nWARNING! This is can be a very slow operation and it will work best with binary images with a black background."; break;
+		case OPERATOR_SKELETON: return "Creates a topological skeletonization of the input.\nWARNING! This can be a very slow operation and it works best with binary images with a black background."; break;
 		case OPERATOR_HITORMISS: return "Looks for very particular patterns on a binary image. The structuring element has three filters: \"white\" areas refers to the search of only white pixels patterns, \"black\" for blacks, \"red\" stand for \"don't care\"."; break;
 		case OPERATOR_THICKENING: return "Converts the black patterns found by the \"Hit-or-Miss\" transform to white, causing the outern shapes to become thicker"; break;
 		case OPERATOR_THINNING: return "Removes the white patterns found by the \"Hit-or-Miss\" transform, causing the outern shapes to become thinner"; break;
