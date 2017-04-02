@@ -54,7 +54,7 @@ static void query (void)
 		{ GIMP_PDB_IMAGE, "image", "Input image" },
 		{ GIMP_PDB_DRAWABLE, "drawable", "Input drawable" },
 		{ GIMP_PDB_INT32, "operator", "The morphological operator { EROSION (0), DILATION (1), OPENING (2), CLOSING (3), BOUNDEXTR(4), GRADIENT(5), HIT-OR-MISS(6), SKELETONIZATION(7), THICKENING(8), THINNING(9), WHITE-TOP-HAT(10), BLACK-TOP-HAT(11) }"},
-		{ GIMP_PDB_INT32, "element-size", "Initial size of the structuring element (fake parameter, it's always 7)" },
+		{ GIMP_PDB_INT32, "element-size", "The size of the next argument" },
 		{ GIMP_PDB_INT8ARRAY, "element",   ""
 			"The structuring element. Must be declared as an array representing a matrix, with size 7x7. "
 			"The first 7 cells represent the first row, and so on. To define the element, set each element[i] to 1, 0 or -1 in case of HIT-OR-MISS, THICKENING or THINNING" },
